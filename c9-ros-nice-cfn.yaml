@@ -1,0 +1,630 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation template for dynamic Cloud 9 RoboMaker setups. Creates a Cloud9 and bootstraps the instance, installs DCV, and optionally installs ROS and a simulator.
+Parameters:
+  C9InstanceType:
+    Description: Cloud9 Instance Type
+    Type: String
+    Default: c6i.2xlarge
+    AllowedValues:
+      - c6i.8xlarge
+      - c6i.2xlarge
+      - c6i.xlarge
+      - m6i.2xlarge
+      - m6i.xlarge
+      - t3a.large
+      - g4dn.xlarge
+    ConstraintDescription: Instance type for the Cloud9 environment.
+  ROSVersion:
+    Description: Version of ROS to install
+    Type: String
+    Default: ROS1Melodic
+    AllowedValues:
+      - ROS1Melodic
+      - NoROSUbuntu1804
+      - ROS1Noetic
+      - NoROSUbuntu2004
+      - ROS2Foxy
+      - NoROSUbuntu2204
+  Simulator:
+    Description: Simulator to install
+    Type: String
+    Default: Gazebo
+    AllowedValues:
+      - Gazebo
+      - Carla
+      - None
+  Cloud9AccessRoleName:
+    Description: Cloud9 Role ARN to permit access to C9 environment (arn:aws:iam::{ACCOUNT_ID}:assumed-role/{ROLE_NAME}/{ALIAS})
+    Type: String
+    Default: default
+Mappings:
+  OSMap:
+    ROS1Melodic:
+      Ubuntu: Ubuntu1804
+    ROS1Noetic:
+      Ubuntu: Ubuntu2004
+    ROS2Foxy:
+      Ubuntu: Ubuntu2004
+    NoROSUbuntu1804:
+      Ubuntu: Ubuntu1804
+    NoROSUbuntu2004:
+      Ubuntu: Ubuntu2004
+    NoROSUbuntu2204:
+      Ubuntu: Ubuntu2204
+  ComputeMap:
+    m6i.xlarge:
+      Ubuntu1804: Ubuntu1804CPU
+      Ubuntu2004: Ubuntu2004CPU
+      Ubuntu2204: Ubuntu2204CPU
+    m6i.2xlarge:
+      Ubuntu1804: Ubuntu1804CPU
+      Ubuntu2004: Ubuntu2004CPU
+      Ubuntu2204: Ubuntu2204CPU
+    t3a.large:
+      Ubuntu1804: Ubuntu1804CPU
+      Ubuntu2004: Ubuntu2004CPU
+      Ubuntu2204: Ubuntu2204CPU
+    g4dn.xlarge:
+      Ubuntu1804: Ubuntu1804GPU
+      Ubuntu2004: Ubuntu2004GPU
+      Ubuntu2204: Ubuntu2204GPU
+    c6i.8xlarge:
+      Ubuntu1804: Ubuntu1804CPU
+      Ubuntu2004: Ubuntu2004CPU
+      Ubuntu2204: Ubuntu2204GPU
+    c6i.xlarge:
+      Ubuntu1804: Ubuntu1804CPU
+      Ubuntu2004: Ubuntu2004CPU
+      Ubuntu2204: Ubuntu2204GPU
+    c6i.2xlarge:
+      Ubuntu1804: Ubuntu1804CPU
+      Ubuntu2004: Ubuntu2004CPU
+      Ubuntu2204: Ubuntu2204GPU
+  AMIMap:
+    us-east-1:
+      Ubuntu1804CPU: ami-005de95e8ff495156 # Ubuntu Server 18.04 LTS (HVM), SSD Volume Type
+      Ubuntu1804GPU: ami-003566b22128092cd # isaacsim: ami-08084538a6dec4734
+      Ubuntu2004CPU: ami-08d4ac5b634553e16 # Ubuntu Server 20.04 LTS (HVM), SSD Volume Type
+      Ubuntu2004GPU: ami-08cb7e65c4e13f22d # Deep Learning AMI GPU PyTorch 1.12.0 (Ubuntu 20.04) 20220824
+      Ubuntu2204CPU: ami-099bc67a2500003c1 # Cloud9Ubuntu-2022-04-28T13-38
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+    us-west-2:
+      Ubuntu1804CPU: ami-0cfa91bdbc3be780c # Ubuntu Server 18.04 LTS (HVM), SSD Volume Type
+      Ubuntu1804GPU: ami-0475f1fb0e9b1f73f # isaacsim: ami-08084538a6dec4734
+      Ubuntu2004CPU: ami-0ddf424f81ddb0720 # Ubuntu Server 20.04 LTS (HVM), SSD Volume Type
+      Ubuntu2004GPU: ami-0eaff0d700233c573 # Deep Learning AMI GPU PyTorch 1.12.0 (Ubuntu 20.04) 20220824
+      Ubuntu2204CPU: ami-043211bbba49eb3d6 # Cloud9Ubuntu-2022-04-28T13-38
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+    ap-northeast-1:
+      Ubuntu1804CPU: ami-021117b0e6a499966 # bionic 18.04 LTS amd64 hvm:ebs-ssd 20221201
+      Ubuntu1804GPU: ami-0b65e49e84399c746 # Deep Learning AMI (Ubuntu 18.04) Version 68.0
+      Ubuntu2004CPU: ami-0298b80b630effab3 # focal 20.04 LTS amd64 hvm:ebs-ssd 20221206 hvm
+      Ubuntu2004GPU: ami-0327775fe220e5527 # AWS Deep Learning AMI GPU CUDA 11 (Ubuntu 20.04) 20220317
+      Ubuntu2204CPU: ami-0ff0cc5dc80fe14a6 # Cloud9Ubuntu-2022-04-28T13-38
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+    ap-northeast-2:
+      Ubuntu1804CPU: ami-0d19691dd2d866cb6 # bionic 18.04 LTS amd64 hvm:ebs-ssd 20221201
+      Ubuntu1804GPU: ami-04ddfb3670f486bcc # isaacsim: IsaacSim-Ubuntu-18.04-GPU-2022-05-31
+      Ubuntu2004CPU: ami-0ab9357b9799530ef # focal 20.04 LTS amd64 hvm:ebs-ssd 20221206 hvm
+      Ubuntu2004GPU: ami-0d6df9f7aa5522909 # AWS Deep Learning AMI GPU TensorFlow 2.8.0 (Ubuntu 20.04) 20220216
+      Ubuntu2204CPU: ami-0032bc62a8ae2d773 # Cloud9Ubuntu-2022-04-28T13-38
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+    ap-northeast-3:
+      Ubuntu1804CPU: ami-0fee715f47bd148b6 # bionic 18.04 LTS amd64 hvm:ebs-ssd 20221201
+      Ubuntu1804GPU: ami-03843c70f69c6305c # IsaacSim-Ubuntu-18.04-GPU-2022-05-31
+      Ubuntu2004CPU: ami-07b39279f43b646c6 # focal 20.04 LTS amd64 hvm:ebs-ssd 20221206 hvm
+      Ubuntu2004GPU: ami-07fb6d65d0af9ed16 # Deep Learning AMI GPU PyTorch 1.13.1 (Ubuntu 20.04) 20230215
+      Ubuntu2204CPU: ami-07e1ec61b05c74710 # Cloud9Ubuntu-2022-04-28T13-38
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+    ap-southeast-1:
+      Ubuntu1804CPU: ami-02534880ddeb454f5 # bionic  18.04 LTS amd64 hvm:ebs-ssd 20221201   hvm
+      Ubuntu1804GPU: ami-0d67d736eeaffcc14 # IsaacSim-Ubuntu-18.04-GPU-2022-05-31
+      Ubuntu2004CPU: ami-0298b80b630effab3 # focal 20.04 LTS amd64 hvm:ebs-ssd 20221206   hvm
+      Ubuntu2004GPU: ami-0a5df5cca3b475786 # Deep Learning AMI GPU PyTorch 1.13.1 (Ubuntu 20.04) 20230215
+      Ubuntu2204CPU: ami-0fc919643040d71da # Cloud9Ubuntu-2022-04-28T13-38
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+    ap-southeast-2:
+      Ubuntu1804CPU: ami-0d21d42bea8de8b55 # bionic  18.04 LTS amd64 hvm:ebs-ssd 20221201   hvm
+      Ubuntu1804GPU: ami-0cadf512ea43b3aef # IsaacSim-Ubuntu-18.04-GPU-2022-05-31
+      Ubuntu2004CPU: ami-0ab9357b9799530ef # focal 20.04 LTS amd64 hvm:ebs-ssd 20221206   hvm
+      Ubuntu2004GPU: ami-03b026e61b4a8200d # Deep Learning AMI GPU PyTorch 1.13.1 (Ubuntu 20.04) 20230215
+      Ubuntu2204CPU: ami-06fa03ed767ea76ed # Cloud9Ubuntu-2022-04-28T13-38
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+    ap-southeast-3:
+      Ubuntu1804CPU: ami-02c68bc8e70dcf83f # bionic  18.04 LTS amd64 hvm:ebs-ssd 20221201   hvm
+      Ubuntu1804GPU: ami-0cadf512ea43b3aef # IsaacSim-Ubuntu-18.04-GPU-2022-05-31
+      Ubuntu2004CPU: ami-07b39279f43b646c6 # focal 20.04 LTS amd64 hvm:ebs-ssd 20221206   hvm
+      Ubuntu2004GPU: ami-03b026e61b4a8200d # Deep Learning AMI GPU PyTorch 1.13.1 (Ubuntu 20.04) 20230215
+      #Ubuntu2204CPU: TODO # Ubuntu Server 22.04 LTS (HVM), SSD Volume Type
+      #Ubuntu2204GPU: TODO # Deep Learning AMI GPU PyTorch ? (Ubuntu 22.04)
+      
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "Cloud9 Dev VPC-${AWS::StackName}"
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+      - 0
+      - !GetAZs
+        Ref: 'AWS::Region'
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W33
+            reason: "Cloud9 needs a public IP to SSH to the EC2 instance."
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  InternetRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTable
+  SubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref SubnetA
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Permit SSH traffic for Cloud9 and 8080 traffic for DCV"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp:  0.0.0.0/0
+          Description: Allow SSH traffic for Cloud9
+        - IpProtocol: tcp
+          FromPort: '8080'
+          ToPort: '8080'
+          CidrIp:  0.0.0.0/0
+          Description: Allow DCV traffic
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: EC23
+            reason: "Cloud9 needs to be able to SSH(22) and DCV(8080) to this machine, and the IP range it can connect from is not fixed."
+          - id: W40
+            reason: "TCP and UDP traffic needs to be permitted egress"
+          - id: W5
+            reason: "Egress is needed for a variety of functions"
+          - id: W9
+            reason: "Ingress is needed for a variety of functions"
+          - id: W2
+            reason: "Ingress is needed for a variety of functions"
+################## PERMISSIONS AND ROLES #################
+  InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess'
+      Policies:
+        - PolicyName: !Sub "Cloud9Actions-${AWS::StackName}"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloud9:GetUserPublicKey'
+                  - 'cloud9:CreateEnvironmentSSH'
+                  - 'cloud9:CreateEnvironmentMembership'
+                  - 'cloud9:CreateEnvironmentMembership'
+                Resource: 'arn:aws:cloud9:*:*:*'
+        - PolicyName: !Sub "RobotActions-${AWS::StackName}"
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: [
+                      "ecr:GetAuthorizationToken",
+                      "ecr:BatchGetImage",
+                      "ecr:GetDownloadUrlForLayer"
+                        ]
+                Resource: '*'
+              - Effect: Allow
+                Action: [
+                      "ssm:UpdateInstanceInformation",
+                      "ssmmessages:CreateControlChannel",
+                      "ssmmessages:CreateDataChannel",
+                      "ssmmessages:OpenControlChannel",
+                      "ssmmessages:OpenDataChannel"
+                        ]
+                Resource: '*'
+              #- Effect: Allow
+              #  Action: [ "greengrass:*" ]
+              #  Resource: arn:aws:greengrass:*:*:*
+              #- Effect: Allow
+              #  Action: [ "iot:*" ]
+              #  Resource: arn:aws:iot:*:*:*
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: IAM4
+            reason: "Needs read-only S3 access to be able to fetch the DCV license from an external bucket."
+          - id: IAM5
+            reason: "Needs to be able to create Cloud9 environments, ECR repositories and SSM sessions, so cannot be restricted to a single resource."
+          - id: W11
+            reason: "Needs to be able to create Cloud9 environments, ECR repositories and SSM sessions, so cannot be restricted to a single resource."
+  C9InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+  FlowLogRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: 'vpc-flow-logs.amazonaws.com'
+          Action: 'sts:AssumeRole'
+      Policies:
+      - PolicyName: 'flowlogs-policy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            - 'logs:DescribeLogGroups'
+            - 'logs:DescribeLogStreams'
+            Resource: !GetAtt 'LogGroup.Arn'
+################## FLOW LOG #####################
+  LogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      RetentionInDays: 1
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W84
+            reason: "No sensitive data is logged in this flow log."
+  FlowLog:
+    Type: 'AWS::EC2::FlowLog'
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt 'FlowLogRole.Arn'
+      LogGroupName: !Ref LogGroup
+      ResourceId: !Ref VPC
+      ResourceType: 'VPC'
+      TrafficType: REJECT
+################## INSTANCE #####################
+  DevMachine:
+    Type: 'AWS::EC2::Instance'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT60M
+    Properties:
+      ImageId:
+        Fn::FindInMap:
+          - AMIMap
+          - !Ref "AWS::Region"
+          - Fn::FindInMap:
+              - ComputeMap
+              - !Ref C9InstanceType
+              - Fn::FindInMap:
+                  - OSMap
+                  - !Ref ROSVersion
+                  - "Ubuntu"
+      InstanceType: !Ref C9InstanceType
+      SubnetId: !Ref SubnetA
+      SecurityGroupIds:
+        - Ref: InstanceSecurityGroup
+      Monitoring: true
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 200
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -v
+
+          ### 1. PREPARATION
+          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+          sleep 10
+
+          apt-get update && apt-get upgrade -y linux-aws && apt upgrade -y
+          if [ -f /var/run/reboot-required ]; then
+            rm -f /var/lib/cloud/instances/*/sem/config_scripts_user
+            echo rebooting ... $(date)
+            reboot
+            exit
+          fi
+
+          # Export variables to be available to sub-scripts
+          export ROLENAME=${Cloud9AccessRoleName}
+          export STACKNAME=${AWS::StackName}
+          export ROSVERSION=${ROSVersion}
+          export SIMULATOR=${Simulator}
+
+
+          ### 2. DESKTOP
+          wget https://raw.githubusercontent.com/ngl-aws/scratch/main/install-desktop.sh
+          bash ./install-desktop.sh
+
+          ### 3. DCV
+          wget https://raw.githubusercontent.com/ngl-aws/scratch/main/install-dcv.sh
+          bash ./install-dcv.sh
+
+          ### 4. ROS
+          wget https://raw.githubusercontent.com/ngl-aws/scratch/main/install-ros.sh
+          bash ./install-ros.sh
+
+          ### 5. SIMULATORS
+          wget https://raw.githubusercontent.com/ngl-aws/scratch/main/install-simulators.sh
+          bash ./install-simulators.sh
+
+          ### 6. CLOUD9
+          wget https://raw.githubusercontent.com/ngl-aws/scratch/main/install-cloud9.sh
+          bash ./install-cloud9.sh
+
+          ### 7. INSTALL DOCKER
+          wget https://raw.githubusercontent.com/ngl-aws/scratch/main/install-docker.sh
+          bash ./install-docker.sh
+
+          ### 8. COMPLETION
+          # Signal creation complete
+          wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.zip
+          unzip aws-cfn-bootstrap-py3-latest.zip
+          cd aws-cfn-bootstrap-2.0/
+          python3 setup.py install
+          /usr/local/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource DevMachine --region ${AWS::Region}
+
+          reboot
+
+      IamInstanceProfile: !Ref C9InstanceProfile
+      Tags:
+        -
+          Key: Name
+          Value: !Sub "${AWS::StackName}"
+        -
+          Key: Application
+          Value: ROS Development Machine
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: EC29
+            reason: "Should not be part of an ASG. Should not have Termination Protection disabled, so the CFN can remove the instance when the stack is destroyed."
+          - id: IAM5
+            reason: "Needs to be able to create Cloud9 environments, ECR repositories and SSM sessions, so cannot be restricted to a single resource."
+  #GGv2ManagedPolicy:
+  #  Type: AWS::IAM::ManagedPolicy
+  #  Properties:
+  #    ManagedPolicyName: !Sub "GreengrassV2TokenExchangeRoleAccess-${AWS::StackName}"
+  #    PolicyDocument:
+  #      Version: '2012-10-17'
+  #      Statement:
+  #        -
+  #          Sid: GreengrassPolicyStatement
+  #          Effect: Allow
+  #          Action:
+  #            - "logs:CreateLogGroup"
+  #            - "logs:CreateLogStream"
+  #            - "logs:PutLogEvents"
+  #            - "logs:DescribeLogStreams"
+  #            - "s3:GetBucketLocation"
+  #          Resource: "*"
+  #GreengrassTokenExchangeRole:
+  #  Type: AWS::IAM::Role
+  #  Properties:
+  #    RoleName: !Sub "GreengrassV2TokenExchangeRole-${AWS::StackName}"
+  #    AssumeRolePolicyDocument:
+  #      Version: "2012-10-17"
+  #      Statement:
+  #        - Effect: Allow
+  #          Principal:
+  #            Service:
+  #              - credentials.iot.amazonaws.com
+  #          Action:
+  #            - 'sts:AssumeRole'
+  #RobotPolicy:
+  #  Type: AWS::IAM::Policy
+  #  Properties:
+  #    PolicyName: !Sub "RobotPolicy-${AWS::StackName}"
+  #    PolicyDocument:
+  #      Statement:
+  #        - Effect: Allow
+  #          Action: [
+  #                "ecr:GetAuthorizationToken",
+  #                "ecr:BatchGetImage",
+  #                "ecr:GetDownloadUrlForLayer"
+  #                  ]
+  #          Resource: '*'
+  #        - Effect: Allow
+  #          Action: [ "greengrass:*" ] # TODO can this be narrowed, does it need to be?
+  #          Resource: '*'
+  #        - Effect: Allow
+  #          Action: [ "iot:*" ] # TODO can this be narrowed, does it need to be?
+  #          Resource: '*'
+  #    Roles:  [ !Ref 'GreengrassTokenExchangeRole' ]
+  #GreengrassTokenPolicy:
+  #  Type: AWS::IAM::Policy
+  #  Properties:
+  #    PolicyName: !Sub "GreengrassTokenExchangePolicy-${AWS::StackName}"
+  #    PolicyDocument:
+  #      Statement:
+  #        - Effect: Allow
+  #          Action: [
+  #                  "iot:DescribeCertificate",
+  #                  "logs:CreateLogGroup",
+  #                  "logs:CreateLogStream",
+  #                  "logs:PutLogEvents",
+  #                  "logs:DescribeLogStreams",
+  #                  "iot:Connect",
+  #                  "iot:Publish",
+  #                  "iot:Subscribe",
+  #                  "iot:Receive",
+  #                  "s3:GetBucketLocation"
+  #                  ]
+  #          Resource: '*'
+  #    Roles:  [ !Ref 'GreengrassTokenExchangeRole' ]
+  C9CleanUpFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import json
+          import urllib3
+          import boto3
+          def send_response(event, context, response_status, response_data):
+            '''Send a resource manipulation status response to CloudFormation'''
+            responsebody = json.dumps({
+              "Status": response_status,
+              "Reason": "See the details in CloudWatch Log Stream: " + context.log_stream_name,
+              "PhysicalResourceId": context.log_stream_name,
+              "StackId": event['StackId'],
+              "RequestId": event['RequestId'],
+              "LogicalResourceId": event['LogicalResourceId'],
+              "Data": response_data
+            }).encode('utf-8')
+            http = urllib3.PoolManager()
+            r = http.request(
+              'PUT', event['ResponseURL'],
+              body=responsebody,
+              headers={'Content-Type': 'application/json'}
+            )
+            print(f"response: {r}")
+          def handler( event, context ):
+            try:
+              print(f'received event {event}')
+              if event['RequestType'] == 'Create':
+                print('CREATE!')
+                send_response(event, context, 'SUCCESS', {'Message': 'Resource creation successful!'})
+              elif event['RequestType'] == 'Update':
+                print('UPDATE!')
+                send_response(event, context, 'SUCCESS', {'Message': 'Resource update successful!'})
+              elif event['RequestType'] == 'Delete':
+                print('DELETE!')
+                client = boto3.client('cloud9')
+                list_envs = client.list_environments()
+                description_env = client.describe_environments(environmentIds=list_envs['environmentIds'])
+                print(description_env)
+                target = ""
+                for env in description_env["environments"]:
+                  if env["type"] == "ssh" and env["name"] == "RobotWorkshop-${AWS::StackName}":
+                    target = env["id"]
+                    break
+
+                if "" != target:
+                  print(f"Target environment is {target}")
+                  response = client.delete_environment(environmentId=target)
+                  print(response)
+
+                send_response(event, context, 'SUCCESS', {'Message': 'Resource deletion successful!'})
+              else:
+                print('FAILED!')
+                send_response(event, context, 'FAILED', {'Message': 'Unknown message type'})
+              return { 'statusCode': '200', 'body': '' }
+            except Exception as ex:
+              print(ex)
+              print('EXCEPTION FAILED!')
+              send_response(event, context, 'FAILED', {'Message': 'Unknown message type'})
+              return { 'statusCode': '200', 'body': '' }
+      Handler: "index.handler"
+      Runtime: python3.9
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89
+            reason: "Lambda does not need access to any resources in a VPC, so doesn't need to be launched in a VPC."
+          - id: W92
+            reason: "Lambda only needs to run twice ever, does not need to reserve concurrency."
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - cloud9:DeleteEnvironment
+            - cloud9:ListEnvironments
+            - cloud9:DescribeEnvironments
+            Resource: 'arn:aws:cloud9:*:*:*'
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - cloud9:DeleteEnvironment
+            - cloud9:ListEnvironments
+            - cloud9:DescribeEnvironments
+            Resource: 'arn:aws:logs:*:*:*'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: IAM5
+            reason: "Lambda needs to be able to create log groups so cannot have a single resource. Also needs to be able to Delete Environments so cannot be restricted to a single resource, as the resource isn't created when the lambda is created."
+  C9Cleanup:
+    Type: Custom::C9Cleanup
+    Properties:
+      ServiceToken: !GetAtt C9CleanUpFunction.Arn
+Outputs:
+  EC2Host:
+    Description: EC2 Instance Created.
+    Value: !Ref DevMachine
+  LogGroupName:
+    Description: 'The name of the CloudWatch Logs log group where Amazon EC2 publishes your flow logs.'
+    Value: !Ref LogGroup
+  LogGroupARN:
+    Description: 'The ARN of the CloudWatch Logs log group where Amazon EC2 publishes your flow logs.'
+    Value: !GetAtt 'LogGroup.Arn'
