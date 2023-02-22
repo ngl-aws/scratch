@@ -10,8 +10,8 @@ tar -xvzf nice-dcv-2022.2-14521-ubuntu1804-x86_64.tgz && rm nice-dcv-2022.2-1452
 echo Installing DCV for Ubuntu 18.04
 cd nice-dcv-2022.2-14521-ubuntu1804-x86_64 && \
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-./nice-dcv-2022.2-14521-1_amd64.ubuntu1804.deb \
-./nice-dcv-2022.2-14521-1_amd64.ubuntu1804.deb
+./nice-dcv-server_2022.2.14521-1_amd64.ubuntu1804.deb \
+./nice-xdcv_2022.2.519-1_amd64.ubuntu1804.deb
 
 elif [ ${ROSVERSION} == "ROS1Noetic" ] || [ ${ROSVERSION} == "NoROSUbuntu2004" ]; then
 echo Installing DCV for Ubuntu 20.04
