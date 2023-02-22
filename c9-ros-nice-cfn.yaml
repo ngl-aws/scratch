@@ -74,15 +74,15 @@ Mappings:
     c6i.8xlarge:
       Ubuntu1804: Ubuntu1804CPU
       Ubuntu2004: Ubuntu2004CPU
-      Ubuntu2204: Ubuntu2204GPU
+      Ubuntu2204: Ubuntu2204CPU
     c6i.xlarge:
       Ubuntu1804: Ubuntu1804CPU
       Ubuntu2004: Ubuntu2004CPU
-      Ubuntu2204: Ubuntu2204GPU
+      Ubuntu2204: Ubuntu2204CPU
     c6i.2xlarge:
       Ubuntu1804: Ubuntu1804CPU
       Ubuntu2004: Ubuntu2004CPU
-      Ubuntu2204: Ubuntu2204GPU
+      Ubuntu2204: Ubuntu2204CPU
   AMIMap:
     us-east-1:
       Ubuntu1804CPU: ami-005de95e8ff495156 # Ubuntu Server 18.04 LTS (HVM), SSD Volume Type
