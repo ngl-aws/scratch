@@ -28,6 +28,7 @@ if [ ${ROSVERSION} == "ROS1Melodic" ] || [ ${ROSVERSION} == "NoROSUbuntu1804" ];
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ubuntu-desktop lightdm
 else
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ubuntu-desktop gdm3
+sed -i "s/^#WaylandEnable=false/WaylandEnable=false/g" /etc/gdm3/custom.conf
 fi
 
 # install_desktop_utilities
